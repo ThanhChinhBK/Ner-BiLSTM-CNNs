@@ -12,7 +12,7 @@ def main(fi):
             sent = []
             section = list(section)
             
-            if section[0].split(" ")[1].startswith("-DOCSTART-"):
+            if section[0].split(" ")[0].startswith("-DOCSTART-"):
                 continue
             if section[0].split() == "":
                 continue
