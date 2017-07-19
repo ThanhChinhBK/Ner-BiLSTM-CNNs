@@ -1,5 +1,5 @@
 import sys, string
-import json
+import json, pickle
 import numpy as np
 from collections import defaultdict
 from data_utils import *
@@ -50,8 +50,13 @@ class DataProcessor(object):
                 targets = [self.tags[clear_target(x["target"])] for x in tokens]
                 chars = [clear_char(token["raw"], self.max_len, self.char) for token in tokens]
                 chars_addtion = [clear_char_addition(x, self.max_len) for x in tokens]
-        dataset.append((token_ids, tokens_addition, chars, chars_addtion,  targets))
+                dataset.append((token_ids, tokens_addition, chars, chars_addtion,  targets))
         return dataset
 
 if __name__ == "__main__":
-    DataProcessor("work/")
+    data_processor = DataProcessor("work/")
+    sys.stderr.write("saving dataset ....")
+    pickle.dump(data_processor.train_data, open("train.data", "wb"))
+    pickle.dump(data_processor.test_data, open("test.data", "wb"))
+    pickle.dump(data_processor.dev_data, open("dev.data", "wb"))
+    sys.stderr.write("done.\n")
