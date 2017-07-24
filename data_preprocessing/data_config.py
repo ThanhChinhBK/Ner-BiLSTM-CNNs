@@ -22,8 +22,10 @@ def main():
     max_sent_len = max(sents)
     max_word_len = max(words_len)
     fo = open(config_txt, "w")
-    fo.write("max sentence length:" + str(max_sent_len) + "\n")
-    fo.write("max word length:" + str(max_word_len) + "\n")
+    config = {"max_sent_len": max_sent_len,
+              "max_word_len": max_word_len}
+    json.dump(config, fo)
+    
 
 if __name__ == "__main__":
     main()
