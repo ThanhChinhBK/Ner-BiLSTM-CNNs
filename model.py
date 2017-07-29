@@ -1,5 +1,6 @@
 import tensorflow as tf
 import json, pickle
+from datetime import datetime
 
 
 class RNN_CNNs():
@@ -88,11 +89,22 @@ class RNN_CNNs():
         cross_entropy /= tf.cast(self.sent_len, tf.float32)
         return tf.reduce_mean(cross_entropy)
 
-    def __init__(self, config):
-        self.config = config
+    def _build_graph(self):
         self._add_placeholder()
         self._add_embdding()
         self._add_model()
+
+    def __init__(self, config):
+        self.config = config
+        self._build_graph()
+        init = tf.global_variables_initializer()
+        self.sess = tf.Session()
+        self.sess.run(init)
+        self.saver = tf.train.Saver()
+    
+    def save_model(self):
+        now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        save_path=saver.save(sess,"tmp/model-%s.ckpt" %now)
 
     def partial_fit(self, sentence, word_list, word_addition, char_addition, sent_len, labels ):
         feed_dict = {self.sentence : sentence,
@@ -123,19 +135,3 @@ class RNN_CNNs():
                      self.sent_len: sent_len
         }
         return self.sess.run(self.label_predict, feed_dict=feed_dict)
-
-if __name__ == "__main__":
-    config = { "sentence_length" : 121, 
-               "word_length" : 61,
-               "vector_path" : "vocab.vec",
-               "rnn_hidden" : 275,
-               "filter_size" : 3,
-               "char_feature_size" : 53,
-               "char_embded_size" : 50,
-               "char_num" : 51,
-               "rnn_dropout" : 0.65,
-               "learning_rate" : 0.105,
-               "num_class" : 5
-    }
-    RNN_CNNs(config)
-    json.dumps(config, open("config.json", "w"))
