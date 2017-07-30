@@ -17,8 +17,8 @@ def check_additon_word(token):
             if not c.isupper() and not c.islower():
                 check_noinfo = True
                 break
-            if check_noinfo: return 0
-            else: return 3
+        if check_noinfo: return 0
+        else: return 3
 
 def check_addition_char(c):
     '''

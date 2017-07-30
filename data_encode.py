@@ -64,7 +64,7 @@ class DataProcessor(object):
                 chars_addtion = [clear_char_addition(x, self.config["max_word_len"]) for x in tokens]
                 chars_addtion += [[0 for _ in range(self.config["max_word_len"])] \
                           for _ in range(self.config["max_sent_len"] - sent_len)]
-                dataset.append((token_ids, tokens_addition, chars, chars_addtion,  targets))
+                dataset.append((token_ids, sent_len, tokens_addition, chars, chars_addtion,  targets))
         return dataset
 
     def _load_vector(self):    
