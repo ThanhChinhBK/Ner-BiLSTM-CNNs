@@ -1,1 +1,1 @@
-{"char_embded_size": 50, "sentence_length": 121, "num_class": 5, "word_length": 61, "filter_size": 3, "learning_rate": 0.105, "char_feature_size": 53, "rnn_hidden": 275, "char_num": 51, "rnn_dropout": 0.65, "vector_path": "vocab.vec"}
+{"char_embded_size": 50, "sentence_length": 124, "num_class": 5, "word_length": 61, "filter_size": 3, "learning_rate": 0.105, "char_feature_size": 53, "rnn_hidden": 275, "char_num": 51, "rnn_dropout": 0.65, "vector_path": "vocab.vec"}

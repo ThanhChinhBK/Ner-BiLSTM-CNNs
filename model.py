@@ -26,6 +26,7 @@ class RNN_CNNs():
         with tf.variable_scope("embeded_layer"):
             word_embded = tf.get_variable("word_embeded", initializer=word_initializer)
             char_embded = tf.get_variable("char_embeded", initializer=char_initializer)
+            #char_add_embded = tf.get_variable("char_add_embded",shape=[4]) 
             self.word_vectors = tf.nn.embedding_lookup(word_embded, self.sentence)            
             self.char_vectors = tf.nn.embedding_lookup(char_embded, self.word_list)
             self.char_vectors = tf.concat(3, (self.char_vectors, self.char_addition))

@@ -57,7 +57,8 @@ class DataProcessor(object):
                 sent_len = len(token_ids)
                 token_ids += [0 for _ in range(self.config["max_sent_len"] - sent_len)]
                 tokens_addition += [0 for _ in range(self.config["max_sent_len"] - sent_len)]
-                targets = [self.tags[clear_target(x["target"])] for x in tokens]
+                targets = [clear_target(x["target"]) for x in tokens]
+                targets += [clear_target() for _ in range(self.config["max_sent_len"] - sent_len)]
                 chars = [clear_char(token["raw"], self.config["max_word_len"], self.char) for token in tokens]
                 chars += [[0 for _ in range(self.config["max_word_len"])] \
                           for _ in range(self.config["max_sent_len"] - sent_len)]

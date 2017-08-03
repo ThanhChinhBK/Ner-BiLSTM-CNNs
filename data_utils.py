@@ -31,8 +31,20 @@ def check_addition_char(c):
     elif c in string.punctuation: return 3
     else: return 0
 
-def clear_target(target):
-    return target[2:] if len(target) > 2 else target
+def clear_target(target=""):
+    target = target[2:] if len(target) > 2 else target
+    if target == 'PER':
+        return np.array([1, 0, 0, 0, 0])
+    elif target == 'LOC':
+        return np.array([0, 1, 0, 0, 0])
+    elif target == 'ORG':
+        return np.array([0, 0, 1, 0, 0])
+    elif target == 'MISC':
+        return np.array([0, 0, 0, 1, 0])
+    elif target == 'O':
+        return np.array([0, 0, 0, 0, 1])
+    else:
+        return np.array([0,0,0,0,0])
 
 def clear_char(token, max_len, vocab_char):
     chars = [vocab_char[t.lower()] if t.lower() in vocab_char \
