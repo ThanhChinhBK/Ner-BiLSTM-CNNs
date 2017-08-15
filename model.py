@@ -74,21 +74,13 @@ class RNN_CNNs():
                              tf.nn.l2_loss(W_bw) + tf.nn.l2_loss(b_bw))
         self.prediction = tf.reshape(predict_fw + predict_bw, 
                                      [-1, self.config["sentence_length"], self.config["num_class"]])
-        self.loss = self._cost()
+        #self.loss = self._cost()
+        self.loss = tf.nn.softmax_cross_entropy_with_logits(self.prediction, self.labels)
+        self.loss = tf.reduce_sum(self.loss, reduction_indices=1) / tf.cast(self.sent_len, tf.float32)
+        self.loss = tf.reduce_mean(self.loss)
         self.label_predict = tf.argmax(self.prediction, axis=2)
         optimizer = tf.train.AdamOptimizer(self.config["learning_rate"])
-        tvars = tf.trainable_variables()
-        grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars), 10)
-        self.train_op = optimizer.apply_gradients(zip(grads, tvars))
-
-    def _cost(self):
-        cross_entropy = self.labels * tf.log(self.prediction)
-        cross_entropy = -tf.reduce_sum(cross_entropy, reduction_indices=2)
-        mask = tf.sign(tf.reduce_max(tf.abs(self.labels), reduction_indices=2))
-        cross_entropy *= mask
-        cross_entropy = tf.reduce_sum(cross_entropy, reduction_indices=1)
-        cross_entropy /= tf.cast(self.sent_len, tf.float32)
-        return tf.reduce_mean(cross_entropy)
+        self.train_op = optimizer.minimize(self.loss)
 
     def _build_graph(self):
         self._add_placeholder()
