@@ -110,7 +110,7 @@ class RNN_CNNs():
         cost, opt = self.sess.run((self.loss, self.train_op), feed_dict= feed_dict)
         return cost
 
-    def calc_total_cost(self, word_list, word_addition, char_addition, sent_len, labels ):
+    def calc_total_cost(self, sentence, word_list, word_addition, char_addition, sent_len, labels ):
         feed_dict = {self.sentence : sentence,
                      self.word_list : word_list,
                      self.word_addition: word_addition,
@@ -120,7 +120,7 @@ class RNN_CNNs():
         } 
         return self.sess.run(self.loss, feed_dict = feed_dict)
 
-    def transform(self, word_list, word_addition, char_addition, sent_len):
+    def transform(self, sentence, word_list, word_addition, char_addition, sent_len):
         feed_dict = {self.sentence : sentence,
                      self.word_list : word_list,
                      self.word_addition: word_addition,

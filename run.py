@@ -55,14 +55,43 @@ def _load_data(file_name):
     targets = np.array(targets)
     return token_ids, sent_len, token_addition, char_ids, char_addition, targets
 
+def _f1(config, predicts, labels, sent_length, f1_type="micro"):
+    tp = np.array([0] * (config.num_class + 1))
+    fp = np.array([0] * (config.num_class + 1))
+    fn = np.array([0] * (config.num_class + 1))
+    target = np.argmax(labels, 2)
+    for i in range(len(target)):
+        for j in range(length[i]):
+            if target[i, j] == prediction[i, j]:
+                tp[target[i, j]] += 1
+            else:
+                fp[target[i, j]] += 1
+                fn[prediction[i, j]] += 1
+    unnamed_entity = config.num_class - 1
+    for i in range(args.class_size):
+        if i != unnamed_entity:
+            tp[config.num_class] += tp[i]
+            fp[config.num_class] += fp[i]
+            fn[config.num_class] += fn[i]
+    precision = []
+    recall = []
+    fscore = []
+    for i in range(args.class_size + 1):
+        precision.append(tp[i] * 1.0 / (tp[i] + fp[i]))
+        recall.append(tp[i] * 1.0 / (tp[i] + fn[i]))
+        fscore.append(2.0 * precision[i] * recall[i] / (precision[i] + recall[i]))
+    if f1_type == "micro":        
+        return fscore[config.num_class]
+    return np.mean(fscore[0:config.num_class])
+
 if __name__ == "__main__":
     sys.stderr.write("load data...")
     print(1)
-    train_token_ids, train_sent_len, train_token_additon,\
+    train_token_ids, train_sent_len, train_token_addition,\
         train_char_ids, train_char_addition, train_target = _load_data(FLAGS.train_file)
-    dev_token_ids, dev_sent_len, dev_token_additon,\
+    dev_token_ids, dev_sent_len, dev_token_addition,\
         dev_char_ids, dev_char_addition, dev_target = _load_data(FLAGS.dev_file)
-    test_token_ids, test_sent_len, test_token_additon,\
+    test_token_ids, test_sent_len, test_token_addition,\
         test_char_ids, test_char_addition, test_target = _load_data(FLAGS.test_file)
     print(1)
     sys.stderr.write("done.\n")
@@ -72,8 +101,13 @@ if __name__ == "__main__":
     for e in range(FLAGS.epochs):
         for step, (token_ids_batch, sent_len_batch, token_addition_batch,\
                char_ids_batch, char_addition_batch, target_batch) in enumerate(
-                _batch_split(train_token_ids, train_sent_len, train_token_additon, train_char_ids,
+                _batch_split(train_token_ids, train_sent_len, train_token_addition, train_char_ids,
                              train_char_addition, train_target, FLAGS.batch_size)):
             loss = ner.partial_fit(token_ids_batch, char_ids_batch, token_addition_batch, char_addition_batch,
                         sent_len_batch, target_batch)
-            print("epoch : {} step {} : {}".format(e, step, loss))
+            print("\repoch : {} step {} : {}".format(e, step, loss))
+        prediction = ner.transform(dev_token_ids, dev_char_ids, dev_token_addition,
+                                   dev_char_addition, dev_sent_len)
+        f1 = _f1(config, prediction, dev_target, "micro")
+        print("\nEvaluate:\n")
+        print("f1 score after {} epoch:{}\n".format(e, f1))
