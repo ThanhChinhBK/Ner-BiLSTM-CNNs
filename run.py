@@ -3,6 +3,7 @@ from model import RNN_CNNs
 import pickle, sys, json
 import tensorflow as tf
 from numpy import random as rnd
+from sklearn.metrics import f1_score
 
 tf.flags.DEFINE_string("train_file", "train.data", "train file path")
 tf.flags.DEFINE_string("dev_file", "dev.data", "dev file path")
@@ -22,6 +23,7 @@ def _batch_split(token_ids, sent_len, tokens_addition, chars, chars_addition,  t
     for i in range(0, len(targets), batch_size):
         yield token_ids[i:i+batch_size], sent_len[i:i+batch_size], tokens_addition[i:i+batch_size],\
             chars[i:i+batch_size], chars_addition[i:i+batch_size], targets[i:i+batch_size]
+    
 
 def _load_data(file_name):
     """
@@ -56,33 +58,21 @@ def _load_data(file_name):
     return token_ids, sent_len, token_addition, char_ids, char_addition, targets
 
 def _f1(config, predicts, labels, sent_length, f1_type="micro"):
-    tp = np.array([0] * (config.num_class + 1))
-    fp = np.array([0] * (config.num_class + 1))
-    fn = np.array([0] * (config.num_class + 1))
     target = np.argmax(labels, 2)
+    ytrue = []
+    ypred = []
     for i in range(len(target)):
-        for j in range(length[i]):
-            if target[i, j] == prediction[i, j]:
-                tp[target[i, j]] += 1
-            else:
-                fp[target[i, j]] += 1
-                fn[prediction[i, j]] += 1
-    unnamed_entity = config.num_class - 1
-    for i in range(args.class_size):
-        if i != unnamed_entity:
-            tp[config.num_class] += tp[i]
-            fp[config.num_class] += fp[i]
-            fn[config.num_class] += fn[i]
-    precision = []
-    recall = []
-    fscore = []
-    for i in range(args.class_size + 1):
-        precision.append(tp[i] * 1.0 / (tp[i] + fp[i]))
-        recall.append(tp[i] * 1.0 / (tp[i] + fn[i]))
-        fscore.append(2.0 * precision[i] * recall[i] / (precision[i] + recall[i]))
-    if f1_type == "micro":        
-        return fscore[config.num_class]
-    return np.mean(fscore[0:config.num_class])
+        for length in sent_length:
+            ytrue += target[i][0:length]
+            ypred += predicts[i][0:length]
+            ytrue = np.array(ytrue)
+    ypred = np.array(ypred)
+    f1 = f1_score(ytrue, 
+                  ypred, 
+                  labels=range(0,config["num_class"] -1),
+                  pos_label=None,
+                  average=f1_type)
+    return f1
 
 if __name__ == "__main__":
     sys.stderr.write("load data...")
@@ -98,6 +88,7 @@ if __name__ == "__main__":
     data_size = len(train_token_ids)
     config = json.load(open(FLAGS.config_file))
     ner = RNN_CNNs(config)
+    f1_s = open("f1.txt", "w")
     for e in range(FLAGS.epochs):
         for step, (token_ids_batch, sent_len_batch, token_addition_batch,\
                char_ids_batch, char_addition_batch, target_batch) in enumerate(
@@ -111,3 +102,5 @@ if __name__ == "__main__":
         f1 = _f1(config, prediction, dev_target, "micro")
         print("\nEvaluate:\n")
         print("f1 score after {} epoch:{}\n".format(e, f1))
+        f1_s.write(str(f1) + "\n")
+    f1_s.close()
