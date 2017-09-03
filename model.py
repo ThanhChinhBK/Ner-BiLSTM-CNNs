@@ -2,6 +2,21 @@ import tensorflow as tf
 import json, pickle
 from datetime import datetime
 
+class adict(dict):
+    ''' Attribute dictionary - a convenience data structure, similar to SimpleNamespace in python 3.3
+        One can use attributes to read/write dictionary content.
+    '''
+    def __init__(self, *av, **kav):
+        dict.__init__(self, *av, **kav)
+        self.__dict__ = self
+
+
+def conv2d(input_, output_dim, k_h, k_w, name="conv2d"):
+    with tf.variable_scope(name):
+        w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim])
+        b = tf.get_variable('b', [output_dim])
+
+    return tf.nn.conv2d(input_, w, strides=[1, 1, 1, 1], padding='VALID') + b
 
 class RNN_CNNs():
 
@@ -32,30 +47,55 @@ class RNN_CNNs():
             self.char_vectors = tf.concat(3, (self.char_vectors, self.char_addition))
             self.word_vectors = tf.concat(2, (self.word_vectors, self.word_addition))
 
-    def _add_cnns_layer(self):
-        filter_shape = [self.config["filter_size"], self.config["char_embded_size"] + 4, 
-                        1, self.config["char_feature_size"]]
-        self.W_cnns = tf.get_variable("W_cnns", filter_shape, tf.float32)
-        self.b_cnns = tf.get_variable("b_cnns", [self.config["char_feature_size"]],tf.float32)
-        tf.add_to_collection("loss", tf.nn.l2_loss(self.W_cnns) + tf.nn.l2_loss(self.b_cnns))
+    #def _add_cnns_layer(self):
+    #    filter_shape = [self.config["filter_size"], self.config["char_embded_size"] + 4, 
+    #                    1, self.config["char_feature_size"]]
+    #    self.W_cnns = tf.get_variable("W_cnns", filter_shape, tf.float32)
+    #    self.b_cnns = tf.get_variable("b_cnns", [self.config["char_feature_size"]],tf.float32)
+    #    tf.add_to_collection("loss", tf.nn.l2_loss(self.W_cnns) + tf.nn.l2_loss(self.b_cnns))
     
-    def _run_cnn(self, input):
-        input = tf.expand_dims(input, -1)
-        conv = tf.nn.conv2d(input, self.W_cnns, strides=[1,1,1,1], padding="VALID")
-        h = tf.nn.relu(tf.nn.bias_add(conv, self.b_cnns))
-        pooled = tf.nn.max_pool(h, 
-                                ksize=[1, self.config["word_length"] - self.config["filter_size"] + 1, 1, 1],
-                                strides=[1, 1, 1, 1], padding="VALID")
-        return tf.squeeze(pooled,[1])
+    #def _run_cnn(self, input):
+    #    input = tf.expand_dims(input, -1)
+    #    conv = tf.nn.conv2d(input, self.W_cnns, strides=[1,1,1,1], padding="VALID")
+    #    h = tf.nn.relu(tf.nn.bias_add(conv, self.b_cnns))
+    #    pooled = tf.nn.max_pool(h, 
+    #                            ksize=[1, self.config["word_length"] - self.config["filter_size"] + 1, 1, 1],
+    #                            strides=[1, 1, 1, 1], padding="VALID")
+    #    return tf.squeeze(pooled,[1])
+
+    @staticmethod
+    def conv2d(input_, output_dim, k_h, k_w, name="conv2d"):
+        with tf.variable_scope(name):
+            w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim])
+            b = tf.get_variable('b', [output_dim])
+
+        return tf.nn.conv2d(input_, w, strides=[1, 1, 1, 1], padding='VALID') + b
+    
+    def _tdnn(self, input_, scope="tdnn"):
+        input_ = tf.expand_dims(input_, 1)
+        reduced_length = self.config["word_length"] - self.config["filter_size"] + 1
+        conv = self.conv2d(input_, 
+                           self.config["char_feature_size"], 1, 
+                           self.config["filter_size"], 
+                           name="kernel")
+        pool = tf.nn.max_pool(tf.tanh(conv), [1, 1, reduced_length, 1], [1, 1, 1, 1], 'VALID')
+        return pool
 
     def _add_model(self):
-        word_tensor = []
-        char_level_inputs = [tf.squeeze(x, [1]) for x in tf.split(1, self.config["sentence_length"], self.char_vectors)]
-        self._add_cnns_layer()
-        for x in char_level_inputs:
-            word_tensor.append(self._run_cnn(x))
-        word_tensor = tf.concat(1, word_tensor)
+#        word_tensor = []
+#        char_level_inputs = [tf.squeeze(x, [1]) for x in tf.split(1, self.config["sentence_length"], self.char_vectors)]
+#        self._add_cnns_layer()
+#        for x in char_level_inputs:
+#            word_tensor.append(self._run_cnn(x))
+#        word_tensor = tf.concat(1, word_tensor)
+        char_level_inputs = tf.reshape(self.char_vectors, 
+                                       [-1, self.config["word_length"],self.config["char_embded_size"]])
+        input_cnn = self._tdnn(char_level_inputs)
+        word_tensor = tf.reshape(input_cnn, 
+                                 [-1, self.config["sentence_length"], self.config["char_feature_size"]]
+                                 )
         input = tf.concat(2, (self.word_vectors, word_tensor))
+        
         cell = tf.nn.rnn_cell.LSTMCell(num_units=self.config["rnn_hidden"], state_is_tuple=True)
         cell = tf.nn.rnn_cell.DropoutWrapper(cell, output_keep_prob=self.config["rnn_dropout"])
         (output_fw,output_bw), ( _, _) = tf.nn.bidirectional_dynamic_rnn(cell, cell,
@@ -64,12 +104,15 @@ class RNN_CNNs():
                                                time_major=True)
         output_fw = tf.reshape(tf.transpose(tf.pack(output_fw), perm=[1, 0, 2]), [-1, self.config["rnn_hidden"]])
         output_bw = tf.reshape(tf.transpose(tf.pack(output_bw), perm=[1, 0, 2]), [-1, self.config["rnn_hidden"]])
+     
         W_fw = tf.get_variable('W_fw', [self.config["rnn_hidden"], self.config["num_class"]], tf.float32)
         b_fw = tf.get_variable('b_fw', [self.config["num_class"]], tf.float32)
         W_bw = tf.get_variable('W_bw', [self.config["rnn_hidden"], self.config["num_class"]], tf.float32)
         b_bw = tf.get_variable('b_bw', [self.config["num_class"]], tf.float32)
+        
         predict_fw = tf.nn.softmax(tf.matmul(output_fw, W_fw) + b_fw)
         predict_bw = tf.nn.softmax(tf.matmul(output_bw, W_bw) + b_bw)
+        
         tf.add_to_collection("loss", tf.nn.l2_loss(W_fw) + tf.nn.l2_loss(b_fw) +\
                              tf.nn.l2_loss(W_bw) + tf.nn.l2_loss(b_bw))
         self.prediction = tf.reshape(predict_fw + predict_bw, 
