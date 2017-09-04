@@ -89,7 +89,7 @@ class RNN_CNNs():
 #            word_tensor.append(self._run_cnn(x))
 #        word_tensor = tf.concat(1, word_tensor)
         char_level_inputs = tf.reshape(self.char_vectors, 
-                                       [-1, self.config["word_length"],self.config["char_embded_size"]])
+                                       [-1, self.config["word_length"],self.config["char_embded_size"] + 4])
         input_cnn = self._tdnn(char_level_inputs)
         word_tensor = tf.reshape(input_cnn, 
                                  [-1, self.config["sentence_length"], self.config["char_feature_size"]]
