@@ -62,10 +62,10 @@ def _f1(config, predicts, labels, sent_length, f1_type="micro"):
     ytrue = []
     ypred = []
     for i in range(len(target)):
-        for length in sent_length:
-            ytrue += target[i][0:length]
-            ypred += predicts[i][0:length]
-            ytrue = np.array(ytrue)
+        length = sent_length[i]
+        ytrue = np.concatenate((ytrue, target[i][0:length]))
+        ypred = np.concatenate((ypred, predicts[i][0:length]))
+    ytrue = np.array(ytrue)
     ypred = np.array(ypred)
     f1 = f1_score(ytrue, 
                   ypred, 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
             print("\repoch : {} step {} : {}".format(e, step, loss))
         prediction = ner.transform(dev_token_ids, dev_char_ids, dev_token_addition,
                                    dev_char_addition, dev_sent_len)
-        f1 = _f1(config, prediction, dev_target, "micro")
+        f1 = _f1(config, prediction, dev_target, dev_sent_len, "micro")
         print("\nEvaluate:\n")
         print("f1 score after {} epoch:{}\n".format(e, f1))
         f1_s.write(str(f1) + "\n")
