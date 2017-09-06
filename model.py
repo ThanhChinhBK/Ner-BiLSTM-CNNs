@@ -98,24 +98,31 @@ class RNN_CNNs():
         
         cell = tf.nn.rnn_cell.LSTMCell(num_units=self.config["rnn_hidden"], state_is_tuple=True)
         cell = tf.nn.rnn_cell.DropoutWrapper(cell, output_keep_prob=self.config["rnn_dropout"])
-        (output_fw,output_bw), ( _, _) = tf.nn.bidirectional_dynamic_rnn(cell, cell,
-                                               tf.transpose(input, perm=[1,0,2]),
-                                               dtype=tf.float32, sequence_length=self.sent_len,
-                                               time_major=True)
-        output_fw = tf.reshape(tf.transpose(tf.pack(output_fw), perm=[1, 0, 2]), [-1, self.config["rnn_hidden"]])
-        output_bw = tf.reshape(tf.transpose(tf.pack(output_bw), perm=[1, 0, 2]), [-1, self.config["rnn_hidden"]])
+        (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(cell, cell,
+                                                    tf.transpose(input, perm=[1,0,2]),
+                                                    dtype=tf.float32, sequence_length=self.sent_len,
+                                                    time_major=True)
+        
+        #output_fw = tf.reshape(tf.transpose(tf.pack(output_fw), perm=[1, 0, 2]), [-1, self.config["rnn_hidden"]])
+        #output_bw = tf.reshape(tf.transpose(tf.pack(output_bw), perm=[1, 0, 2]), [-1, self.config["rnn_hidden"]])
      
-        W_fw = tf.get_variable('W_fw', [self.config["rnn_hidden"], self.config["num_class"]], tf.float32)
-        b_fw = tf.get_variable('b_fw', [self.config["num_class"]], tf.float32)
-        W_bw = tf.get_variable('W_bw', [self.config["rnn_hidden"], self.config["num_class"]], tf.float32)
-        b_bw = tf.get_variable('b_bw', [self.config["num_class"]], tf.float32)
+        #W_fw = tf.get_variable('W_fw', [self.config["rnn_hidden"], self.config["num_class"]], tf.float32)
+        #b_fw = tf.get_variable('b_fw', [self.config["num_class"]], tf.float32)
+        #W_bw = tf.get_variable('W_bw', [self.config["rnn_hidden"], self.config["num_class"]], tf.float32)
+        #b_bw = tf.get_variable('b_bw', [self.config["num_class"]], tf.float32)
         
-        predict_fw = tf.nn.softmax(tf.matmul(output_fw, W_fw) + b_fw)
-        predict_bw = tf.nn.softmax(tf.matmul(output_bw, W_bw) + b_bw)
+        output = tf.concat(2, (output_fw, output_bw))
+        output = tf.reshape(tf.transpose(tf.pack(output), perm=[1, 0, 2]), [-1, 2 * self.config["rnn_hidden"]])
+        W = tf.get_variable('W_fw', [2 * self.config["rnn_hidden"], self.config["num_class"]], tf.float32)
+        b = tf.get_variable('b_fw', [self.config["num_class"]], tf.float32)
+        predict = tf.nn.softmax(tf.matmul(output, W) + b)
         
-        tf.add_to_collection("loss", tf.nn.l2_loss(W_fw) + tf.nn.l2_loss(b_fw) +\
-                             tf.nn.l2_loss(W_bw) + tf.nn.l2_loss(b_bw))
-        self.prediction = tf.reshape(predict_fw + predict_bw, 
+        #predict_fw = tf.nn.softmax(tf.matmul(output_fw, W_fw) + b_fw)
+        #predict_bw = tf.nn.softmax(tf.matmul(output_bw, W_bw) + b_bw)
+        
+        #tf.add_to_collection("loss", tf.nn.l2_loss(W_fw) + tf.nn.l2_loss(b_fw) +\
+        #                     tf.nn.l2_loss(W_bw) + tf.nn.l2_loss(b_bw))
+        self.prediction = tf.reshape(predict, 
                                      [-1, self.config["sentence_length"], self.config["num_class"]])
         #self.loss = self._cost()
         self.loss = tf.nn.softmax_cross_entropy_with_logits(self.prediction, self.labels)
