@@ -1,86 +1,185 @@
-import sys, string
+import sys, string, os
 import json, pickle
 import numpy as np
 from collections import defaultdict
 from data_utils import *
-import gensim
+import gensim, utils
 
-class DataProcessor(object):
+MAX_LENGTH = 120
+MAX_CHAR_PER_WORD = 45
+root_symbol = "##ROOT##"
+root_label = "<ROOT>"
+word_end = "##WE##"
+logger = utils.get_logger("LoadData")
 
-    def __init__(self, data_path):
-        self.train_data_path = data_path + "train.clean"
-        self.dev_data_path = data_path + "dev.clean"
-        self.test_data_path = data_path + "test.clean"
-        self.vocab_path = data_path + "vocab.txt"
-        self.char_path = data_path + "vocab_char.txt"
-        self.config_path = data_path + "config.txt"
-        self.tags = {"O":0, "PER":1, "MISC":2, "ORG":3, "LOC":4}
-        self.prepare()
-        
+def read_conll_sequence_labeling(path,word_alphabet, label_alphabet, train_abble=True, out_dir=None):
+    """
+    read data from file in conll format
+    :param path: file path
+    :return: sentences of words and labels, sentences of indexes of words and labels.
+    """
+    #word_alphabet = []
+    #label_alphabet = ['O', "PER", "MISC", "ORG", "LOC"]
+    word_sentences = []
+    label_sentences = []
+
+    word_index_sentences = []
+    label_index_sentences = []
+    if(out_dir !=None):
+        vocab = set()
+        #print(out_dir = os.path.abspath(os.path.join(os.path.curdir, "vocab", timestamp)))
+        vocab_save_path = os.path.join(out_dir, "vocab.pkl")
+    words = []
+    labels = []
+
+    word_ids = []
+    label_ids = []
+
+    num_tokens = 0
+    with open(path) as file:
+        for line in file:
+            #line.decode('utf-8')
+            if line.strip() == "":#this means we have the entire sentence
+                if 0 < len(words) <= MAX_LENGTH:
+                    word_sentences.append(words[:])
+                    label_sentences.append(labels[:])
+
+                    word_index_sentences.append(word_ids[:])
+                    label_index_sentences.append(label_ids[:])
+
+                    num_tokens += len(words)
+                else:
+                    if len(words) != 0:
+                        logger.info("ignore sentence with length %d" % (len(words)))
+
+                words = []
+                labels = []
+
+                word_ids = []
+                label_ids = []
+            else:
+                tokens = line.strip().split()
+                word = tokens[0]
+                label = clear_target(tokens[3])
+
+                words.append(word)
+                if(out_dir !=None):
+                    vocab.add(word)
+                labels.append(label)
+                if train_abble: 
+                    if word not in word_alphabet:
+                        word_alphabet.append(word)
+                    word_id = word_alphabet.index(word)
+                else:
+                    if word not in word_alphabet:
+                        word_id = 0
+                    else:
+                        word_id = word_alphabet.index(word)
+                label_id = label_alphabet.index(label)
+
+                word_ids.append(word_id)
+                label_ids.append(label_id)
+ 
+   #this is for the last sentence            
+    if 0 < len(words) <= MAX_LENGTH:
+        word_sentences.append(words[:])
+        label_sentences.append(labels[:])
+
+        word_index_sentences.append(word_ids[:])
+        label_index_sentences.append(label_ids[:])
+
+        num_tokens += len(words)
+    else:
+        if len(words) != 0:
+            logger.info("ignore sentence with length %d" % (len(words)))
+
+    if(out_dir !=None):
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+        with open(vocab_save_path, 'wb') as handle:
+            pickle.dump(vocab, handle)  
+        logger.info("vocab written to %s" % (vocab_save_path))     
+    logger.info("#sentences: %d, #tokens: %d" % (len(word_sentences), num_tokens))
     
-    def prepare(self):
-        self.config = json.loads(open(self.config_path).read())
-        # load vocabulary
-        sys.stderr.write("loading vocabulary...")
-        with open(self.vocab_path, "r") as fi:
-            self.vocab = {x.split()[0]: int(x.split()[1]) for x in fi}
-            self.id2vocab = {v: k for k,v in self.vocab.items()}
-        sys.stderr.write("done.\n")
+    return word_sentences, label_sentences, word_index_sentences, label_index_sentences
 
-        # load character vocabulary
-        sys.stderr.write("loading characters...")
-        with open(self.char_path, "r") as fi:
-            self.char = {x.split()[0]: int(x.split()[1]) for x in fi}
-            self.id2char = {v: k for k,v in self.char.items()}
-        sys.stderr.write("done.\n")
+def build_embedd_table(word_alphabet, embedd_dict, embedd_dim, caseless=True):
+    scale = np.sqrt(3.0 / embedd_dim)
+    #TODO:should we build an embedding table with words in our training/dev/test plus glove .
+    # the extra words in glove will not be trained but can help with UNK 
+    embedd_table = np.empty([len(word_alphabet), embedd_dim], dtype=np.float64)
+    embedd_table[word_alphabet.default_index, :] = np.random.uniform(-scale, scale, [1, embedd_dim])
+    for index, word in enumerate(word_alphabet):
+        ww = word.lower() if caseless else word
+        embedd = embedd_dict[ww] if ww in embedd_dict else np.random.uniform(-scale, scale, [1, embedd_dim])
+        embedd_table[index, :] = embedd
+    return embedd_table
 
-        # load train/dev/test data
-        sys.stderr.write("loading dataset...")
-        self.train_data = self._load_dataset(self.train_data_path)
-        self.dev_data = self._load_dataset(self.dev_data_path)
-        self.test_data = self._load_dataset(self.test_data_path)
-        sys.stderr.write("done.\n")
-        
-        # load word vector
-        sys.stderr.write("loading wordvector...")
-        self.vocab_vec = self._load_vector()
-        sys.stderr.write("done.\n")
+def construct_padded_char(index_sentences,char_alphabet,max_sent_length,max_char_per_word):
+    C = np.empty([len(index_sentences), max_sent_length, max_char_per_word], dtype=np.int32)
+    # this is to mark space at the end of the words
+    word_end_id = char_alphabet.index(word_end)
 
-    def _load_dataset(self, path):
-        dataset = []
-        with open(path, "r") as input_data:
-            for line in input_data:
-                tokens = [x for x in json.loads(line)]
-                token_ids = [self.vocab[x["surface"]] if x["surface"] \
-                             in self.vocab else self.vocab["<UNK>"] for x in tokens]
-                tokens_addition = [check_additon_word(x["raw"]) for x in tokens]
-                sent_len = len(token_ids)
-                token_ids += [0 for _ in range(self.config["max_sent_len"] - sent_len)]
-                tokens_addition += [0 for _ in range(self.config["max_sent_len"] - sent_len)]
-                targets = [clear_target(x["target"]) for x in tokens]
-                targets += [clear_target() for _ in range(self.config["max_sent_len"] - sent_len)]
-                chars = [clear_char(token["raw"], self.config["max_word_len"], self.char) for token in tokens]
-                chars += [[0 for _ in range(self.config["max_word_len"])] \
-                          for _ in range(self.config["max_sent_len"] - sent_len)]
-                chars_addtion = [clear_char_addition(x, self.config["max_word_len"]) for x in tokens]
-                chars_addtion += [[0 for _ in range(self.config["max_word_len"])] \
-                          for _ in range(self.config["max_sent_len"] - sent_len)]
-                dataset.append((token_ids, sent_len, tokens_addition, chars, chars_addtion,  targets))
-        return dataset
-
-    def _load_vector(self):    
-        sys.stderr.write("Loading Glove embeddings...\n")
-        glove_path = "glove.6B.50d.txt"
-        glove_vectors, glove_dict = load_glove_vectors(glove_path, vocab=set(self.vocab.keys()))
-        vocab_vec = build_initial_embedding_matrix(self.vocab, glove_dict, glove_vectors,)
-        return vocab_vec
+    for i in range(len(index_sentences)):
+        words = index_sentences[i]
+        sent_length = len(words)
+        for j in range(min(sent_length,max_sent_length)):
+            chars = words[j]
+            char_length = len(chars)
+            for k in range(min (char_length,max_char_per_word)):
+                cid = chars[k]
+                C[i, j, k] = cid
+            # fill index of word end after the end of word
+            C[i, j, char_length:] = word_end_id
+        # Zero out C after the end of the sentence
+        C[i, sent_length:, :] = 0
+    return C
 
 
-if __name__ == "__main__":
-    data_processor = DataProcessor("work/")
-    sys.stderr.write("saving dataset ....")
-    pickle.dump(data_processor.train_data, open("train.data", "wb"))
-    pickle.dump(data_processor.test_data, open("test.data", "wb"))
-    pickle.dump(data_processor.dev_data, open("dev.data", "wb"))
-    pickle.dump(data_processor.vocab_vec, open("vocab.vec", "wb"))
-    sys.stderr.write("done.\n")
+def build_char_embedd_table(char_alphabet,char_embedd_dim=30):
+    scale = np.sqrt(3.0 / char_embedd_dim)
+    char_embedd_table = np.random.uniform(-scale, scale, [len(char_alphabet), char_embedd_dim]).astype(
+        np.float64)
+    return char_embedd_table
+
+
+def generate_character_data(sentences_list,char_alphabet, setType="Train", train_abble=True, char_embedd_dim=30):
+    """
+    generate data for charaters
+    :param sentences_train:
+    :param sentences_train:
+    :param max_sent_length: zero for trainset:
+    :return: char_index_set_pad,max_char_per_word, char_embedd_table,char_alphabet
+    """
+    def get_character_indexes(sentences):
+        index_sentences = []
+        max_length = 0
+        for words in sentences:
+            index_words = []
+            for word in words:
+                index_chars = []
+                if len(word) > max_length:
+                    max_length = len(word)
+
+                for char in word[:MAX_CHAR_PER_WORD ]:
+                    if train_abble:
+                        if char not in char_alphabet:
+                            char_alphabet.append(char)
+                        char_id = char_alphabet.index(char)
+                    else:
+                        if char not in char_alphabet:
+                            char_id = 0
+                        else:
+                            char_id = char_alphabet.index(char)
+                    index_chars.append(char_id)
+
+                index_words.append(index_chars)
+            index_sentences.append(index_words)
+        return index_sentences, max_length
+    
+    char_alphabet.append(word_end)
+
+    index_sentences, max_char_per_word = get_character_indexes(sentences_list)
+    max_char_per_word = min(MAX_CHAR_PER_WORD, max_char_per_word)
+    logger.info("Maximum character length after %s set is %d" %(setType ,max_char_per_word))
+    return index_sentences,max_char_per_word

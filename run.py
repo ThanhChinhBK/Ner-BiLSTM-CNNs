@@ -1,17 +1,24 @@
 import numpy as np
 from model import RNN_CNNs
-import pickle, sys, json
+import pickle, sys, json, utils
 import tensorflow as tf
 from numpy import random as rnd
 from sklearn.metrics import f1_score
+import data_encode as de 
 
-tf.flags.DEFINE_string("train_file", "train.data", "train file path")
-tf.flags.DEFINE_string("dev_file", "dev.data", "dev file path")
-tf.flags.DEFINE_string("test_file", "test.data", "test file path")
+tf.flags.DEFINE_string("train_file", "data/train", "train file path")
+tf.flags.DEFINE_string("dev_file", "data/dev", "dev file path")
+tf.flags.DEFINE_string("test_file", "data/test", "test file path")
 tf.flags.DEFINE_string("config_file", "config.json", "config file path")
 tf.flags.DEFINE_integer("batch_size", 100, "batch size")
 tf.flags.DEFINE_integer("epochs", 80, "epochs")
+
+tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
+tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+tf.flags.DEFINE_boolean("PadZeroBegin", False, "where to pad zero in the input")
+
 FLAGS = tf.flags.FLAGS
+logger = utils.get_logger("MainCode")
 
 def _batch_split(token_ids, sent_len, tokens_addition, chars, chars_addition,  targets, batch_size):
     shuffled_idx = rnd.permutation(data_size)
@@ -25,37 +32,7 @@ def _batch_split(token_ids, sent_len, tokens_addition, chars, chars_addition,  t
             chars[i:i+batch_size], chars_addition[i:i+batch_size], targets[i:i+batch_size]
     
 
-def _load_data(file_name):
-    """
-    data = [token_ids, sent_len, tokens_addition, chars, chars_addtion,  targets]
-    """
-    data = pickle.load(open(file_name, "rb"))
-    sent_len = []
-    targets = []
-    token_ids = []
-    char_ids = []
-    token_addition = []
-    char_addition = []
-    for x in data:
-        token_ids.append(x[0])
-        sent_len.append(x[1])
-        token_addition.append(x[2])
-        char_ids.append(x[3])
-        char_addition.append(x[4])
-        targets.append(x[5])
-    token_ids = np.array(token_ids)
-    sent_len = np.array(sent_len)
-    token_addition = np.array(token_addition)
-    temp = np.zeros((token_addition.shape[0], token_addition.shape[1], 5))
-    temp[token_addition] = 1
-    token_addition = temp
-    char_ids =  np.array(char_ids)
-    char_addition = np.array(char_addition)
-    temp = np.zeros((char_addition.shape[0], char_addition.shape[1], char_addition.shape[2], 4))
-    temp[char_addition] = 1
-    char_addition = temp
-    targets = np.array(targets)
-    return token_ids, sent_len, token_addition, char_ids, char_addition, targets
+
 
 def _f1(config, predicts, labels, sent_length, f1_type="micro"):
     target = np.argmax(labels, 2)
@@ -69,24 +46,61 @@ def _f1(config, predicts, labels, sent_length, f1_type="micro"):
     ypred = np.array(ypred)
     f1 = f1_score(ytrue, 
                   ypred, 
-                  labels=range(0,config["num_class"] -1),
+                  labels=range(0,config["num_class"]),
                   pos_label=None,
                   average=f1_type)
     return f1
 
 if __name__ == "__main__":
-    sys.stderr.write("load data...")
-    print(1)
-    train_token_ids, train_sent_len, train_token_addition,\
-        train_char_ids, train_char_addition, train_target = _load_data(FLAGS.train_file)
-    dev_token_ids, dev_sent_len, dev_token_addition,\
-        dev_char_ids, dev_char_addition, dev_target = _load_data(FLAGS.dev_file)
-    test_token_ids, test_sent_len, test_token_addition,\
-        test_char_ids, test_char_addition, test_target = _load_data(FLAGS.test_file)
-    print(1)
-    sys.stderr.write("done.\n")
-    data_size = len(train_token_ids)
     config = json.load(open(FLAGS.config_file))
+    logger.info("load data...")
+    word_alphabet = ["<None>"]
+    label_alphabet = ['O', "PER", "MISC", "ORG", "LOC"]
+    word_sentences_train, label_sentences_train, word_id_sentences_train, label_id_sentences_train \
+        = de.read_conll_sequence_labeling(FLAGS.train_file, word_alphabet, label_alphabet)
+    word_sentences_dev, label_sentences_dev, word_id_sentences_dev, label_id_sentences_dev \
+        = de.read_conll_sequence_labeling(FLAGS.dev_file, word_alphabet, label_alphabet)
+    word_sentences_test, label_sentences_test, word_id_sentences_test, label_id_sentences_test \
+        = de.read_conll_sequence_labeling(FLAGS.test_file, word_alphabet, label_alphabet)
+    max_length_train = utils.get_max_length(word_id_sentences_train)
+    max_length_dev = utils.get_max_length(word_id_sentences_dev)
+    max_length_test = utils.get_max_length(word_id_sentences_test)
+    max_length = max(max_length_train, max_length_dev, max_length_test)
+    logger.info("done.\n")
+    config["sentence_length"] = max_length
+    logger.info("word alphabet size: %d" % (len(word_alphabet) - 1))
+    logger.info("label alphabet size: %d" % (len(label_alphabet) - 1))
+    logger.info("set max sentence length to %d" %(max_length))
+    logger.info("Padding training text and lables ...")
+    char_alphabet = ["<None>"]
+    word_index_sentences_train_pad,train_seq_length = utils.padSequence(word_id_sentences_train,
+                                                                        max_length, 
+                                                                        beginZero=FLAGS.PadZeroBegin)
+    label_index_sentences_train_pad,_= utils.padSequence(label_id_sentences_train,
+                                                         max_length, 
+                                                         beginZero=FLAGS.PadZeroBegin)
+
+    logger.info("Padding dev text and labels ...")
+    word_index_sentences_dev_pad,dev_seq_length = utils.padSequence(word_id_sentences_dev,
+                                                                    max_length, 
+                                                                    beginZero=FLAGS.PadZeroBegin)
+    label_index_sentences_dev_pad,_= utils.padSequence(label_id_sentences_dev,
+                                                       max_length, 
+                                                       beginZero=FLAGS.PadZeroBegin)
+
+    char_index_train,max_char_per_word_train= de.generate_character_data(word_sentences_train,  
+                                                                         char_alphabet,
+                                                                         setType="Train")
+    logger.info("Creating character set FROM dev set ...")
+    char_index_dev,max_char_per_word_dev= de.generate_character_data(word_sentences_dev, 
+                                                                     char_alphabet, 
+                                                                     setType="Dev",
+                                                                     train_abble=False)
+    logger.info("character alphabet size: %d" % (len(char_alphabet) - 1))
+    max_char_per_word = min(de.MAX_CHAR_PER_WORD, max_char_per_word_train,max_char_per_word_dev)
+    config["char_num"] = max_char_per_word
+    logger.info("set Maximum character length to %d" %max_char_per_word)
+
     ner = RNN_CNNs(config)
     f1_s = open("f1.txt", "w")
     for e in range(FLAGS.epochs):
