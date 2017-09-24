@@ -34,10 +34,11 @@ class RNN_CNNs():
         self.labels = tf.placeholder(tf.float32, [None, self.config["sentence_length"], self.config["num_class"]], name ="labels")
         
     def _add_embdding(self):
-        word_initializer = tf.constant(pickle.load(open(self.config["vector_path"], "rb")),
-                              dtype=tf.float32)
-        char_initializer = tf.random_uniform(shape=[self.config["char_num"], self.config["char_embded_size"]],
-                                             minval=-0.5, maxval=0.5) 
+        word_initializer = tf.constant(self.word_embed,
+                                       dtype=tf.float32)
+        char_initializer = tf.constant(self.char_embded,
+                                       dtype=tf.float32)
+                          
         with tf.variable_scope("embeded_layer"):
             word_embded = tf.get_variable("word_embeded", initializer=word_initializer)
             char_embded = tf.get_variable("char_embeded", initializer=char_initializer)
@@ -150,7 +151,9 @@ class RNN_CNNs():
         self._add_embdding()
         self._add_model()
 
-    def __init__(self, config):
+    def __init__(self, config, word_embded, char_embded):
+        self.word_embed = word_embded
+        self.char_embded = char_embded
         self.config = config
         self._build_graph()
         init = tf.global_variables_initializer()

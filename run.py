@@ -12,6 +12,7 @@ tf.flags.DEFINE_string("test_file", "data/test", "test file path")
 tf.flags.DEFINE_string("config_file", "config.json", "config file path")
 tf.flags.DEFINE_integer("batch_size", 100, "batch size")
 tf.flags.DEFINE_integer("epochs", 80, "epochs")
+tf.flags.DEFINE_string("embedding_path", "glove.6B.50d.txt", "word embedding path")
 
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
@@ -100,8 +101,15 @@ if __name__ == "__main__":
     max_char_per_word = min(de.MAX_CHAR_PER_WORD, max_char_per_word_train,max_char_per_word_dev)
     config["char_num"] = max_char_per_word
     logger.info("set Maximum character length to %d" %max_char_per_word)
-
-    ner = RNN_CNNs(config)
+    embedd_dict, embedd_dim, caseless = utils.load_word_embedding_dict("glove", 
+                                                                       FLAGS.embedding_path,
+                                                                       logger)
+    logger.info("Dimension of embedding is %d, Caseless: %d" % (embedd_dim, caseless))
+    embedd_table = de.build_embedd_table(word_alphabet, embedd_dict, embedd_dim, caseless)
+    char_embedd_table = de.build_char_embedd_table(char_alphabet, config["char_embded_size"])
+    logger.info("build embedding complete")
+    ner = RNN_CNNs(config, embedd_table, char_embedd_table)
+    logger.info("Model Created")
     f1_s = open("f1.txt", "w")
     for e in range(FLAGS.epochs):
         for step, (token_ids_batch, sent_len_batch, token_addition_batch,\
