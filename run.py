@@ -21,22 +21,22 @@ tf.flags.DEFINE_boolean("PadZeroBegin", False, "where to pad zero in the input")
 FLAGS = tf.flags.FLAGS
 logger = utils.get_logger("MainCode")
 
-def _batch_split(token_ids, sent_len, tokens_addition, chars, chars_addition,  targets, batch_size):
+def _batch_split(token_ids, sent_len, chars, targets, batch_size):
+    data_size = len(token_ids)
     shuffled_idx = rnd.permutation(data_size)
-    token_ids = token_ids[shuffled_idx]
-    sent_len = sent_len[shuffled_idx]
-    tokens_addition = tokens_addition[shuffled_idx]
-    chars = chars[shuffled_idx]
-    targets = targets[shuffled_idx]
+    token_ids = np.array(token_ids)[shuffled_idx]
+    sent_len = np.array(sent_len)[shuffled_idx]
+    chars = np.array(chars)[shuffled_idx]
+    targets = np.array(targets)[shuffled_idx]
     for i in range(0, len(targets), batch_size):
-        yield token_ids[i:i+batch_size], sent_len[i:i+batch_size], tokens_addition[i:i+batch_size],\
-            chars[i:i+batch_size], chars_addition[i:i+batch_size], targets[i:i+batch_size]
+        yield token_ids[i:i+batch_size], sent_len[i:i+batch_size],\
+            chars[i:i+batch_size],targets[i:i+batch_size]
     
 
 
 
 def _f1(config, predicts, labels, sent_length, f1_type="micro"):
-    target = np.argmax(labels, 2)
+    #target = np.argmax(labels, 2)
     ytrue = []
     ypred = []
     for i in range(len(target)):
@@ -99,8 +99,15 @@ if __name__ == "__main__":
                                                                      train_abble=False)
     logger.info("character alphabet size: %d" % (len(char_alphabet) - 1))
     max_char_per_word = min(de.MAX_CHAR_PER_WORD, max_char_per_word_train,max_char_per_word_dev)
-    config["char_num"] = max_char_per_word
+    config["word_length"] = max_char_per_word    
     logger.info("set Maximum character length to %d" %max_char_per_word)
+    logger.info("Padding Training set ...")
+    char_index_train_pad = de.construct_padded_char(char_index_train, char_alphabet, 
+                                                    max_sent_length=max_length,max_char_per_word=max_char_per_word)
+    logger.info("Padding Dev set ...")
+    char_index_dev_pad = de.construct_padded_char(char_index_dev, char_alphabet, 
+                                                  max_sent_length=max_length,max_char_per_word=max_char_per_word)
+
     embedd_dict, embedd_dim, caseless = utils.load_word_embedding_dict("glove", 
                                                                        FLAGS.embedding_path,
                                                                        logger)
@@ -112,16 +119,15 @@ if __name__ == "__main__":
     logger.info("Model Created")
     f1_s = open("f1.txt", "w")
     for e in range(FLAGS.epochs):
-        for step, (token_ids_batch, sent_len_batch, token_addition_batch,\
-               char_ids_batch, char_addition_batch, target_batch) in enumerate(
-                _batch_split(train_token_ids, train_sent_len, train_token_addition, train_char_ids,
-                             train_char_addition, train_target, FLAGS.batch_size)):
-            loss = ner.partial_fit(token_ids_batch, char_ids_batch, token_addition_batch, char_addition_batch,
-                        sent_len_batch, target_batch)
+        for step, (token_ids_batch, sent_len_batch,\
+               char_ids_batch, target_batch) in enumerate(
+                _batch_split( word_index_sentences_train_pad, train_seq_length, char_index_train_pad,
+                              label_index_sentences_train_pad, FLAGS.batch_size)):
+            loss = ner.partial_fit(token_ids_batch, char_ids_batch, 
+                                   sent_len_batch, target_batch)
             print("\repoch : {} step {} : {}".format(e, step, loss))
-        prediction = ner.transform(dev_token_ids, dev_char_ids, dev_token_addition,
-                                   dev_char_addition, dev_sent_len)
-        f1 = _f1(config, prediction, dev_target, dev_sent_len, "micro")
+        dev_prediction = ner.transform(word_index_sentences_dev_pad, char_index_dev_pad, dev_seq_length)
+        f1 = _f1(config, dev_prediction, label_index_sentences_dev_pad, dev_sent_len, "micro")
         print("\nEvaluate:\n")
         print("f1 score after {} epoch:{}\n".format(e, f1))
         f1_s.write(str(f1) + "\n")

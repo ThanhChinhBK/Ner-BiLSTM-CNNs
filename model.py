@@ -25,13 +25,13 @@ class RNN_CNNs():
                                        name="sentence")
         self.word_list = tf.placeholder(tf.int32, [None, self.config["sentence_length"], self.config["word_length"]],
                                         name="word_list")
-        self.word_addition = tf.placeholder(tf.float32, [None, self.config["sentence_length"], 5],
-                                            name="word_addition")
-        self.char_addition = tf.placeholder(tf.float32, 
-                                            [None, self.config["sentence_length"], self.config["word_length"], 4], 
-                                            name="char_addition")
+        #self.word_addition = tf.placeholder(tf.float32, [None, self.config["sentence_length"], 5],
+        #                                    name="word_addition")
+        #self.char_addition = tf.placeholder(tf.float32, 
+        #                                    [None, self.config["sentence_length"], self.config["word_length"], 4], 
+        #                                    name="char_addition")
         self.sent_len = tf.placeholder(tf.int32, [None], name="sent_len")
-        self.labels = tf.placeholder(tf.float32, [None, self.config["sentence_length"], self.config["num_class"]], name ="labels")
+        self.labels = tf.placeholder(tf.int32, [None, self.config["sentence_length"]], name ="labels")
         
     def _add_embdding(self):
         word_initializer = tf.constant(self.word_embed,
@@ -45,8 +45,8 @@ class RNN_CNNs():
             #char_add_embded = tf.get_variable("char_add_embded",shape=[4]) 
             self.word_vectors = tf.nn.embedding_lookup(word_embded, self.sentence)            
             self.char_vectors = tf.nn.embedding_lookup(char_embded, self.word_list)
-            self.char_vectors = tf.concat(3, (self.char_vectors, self.char_addition))
-            self.word_vectors = tf.concat(2, (self.word_vectors, self.word_addition))
+            #self.char_vectors = tf.concat(3, (self.char_vectors, self.char_addition))
+            #self.word_vectors = tf.concat(2, (self.word_vectors, self.word_addition))
 
     #def _add_cnns_layer(self):
     #    filter_shape = [self.config["filter_size"], self.config["char_embded_size"] + 4, 
@@ -90,7 +90,7 @@ class RNN_CNNs():
 #            word_tensor.append(self._run_cnn(x))
 #        word_tensor = tf.concat(1, word_tensor)
         char_level_inputs = tf.reshape(self.char_vectors, 
-                                       [-1, self.config["word_length"],self.config["char_embded_size"] + 4])
+                                       [-1, self.config["word_length"],self.config["char_embded_size"]])
         input_cnn = self._tdnn(char_level_inputs)
         word_tensor = tf.reshape(input_cnn, 
                                  [-1, self.config["sentence_length"], self.config["char_feature_size"]]
@@ -125,7 +125,10 @@ class RNN_CNNs():
         #                     tf.nn.l2_loss(W_bw) + tf.nn.l2_loss(b_bw))
         self.prediction = tf.reshape(predict, 
                                      [-1, self.config["sentence_length"], self.config["num_class"]])
-        self.loss = self._cost()
+        #self.loss = self._cost()
+        log_likehood, _ = tf.contrib.crf.crf_log_likelihood(
+                self.prediction, self.labels, self.sent_len)
+        self.loss = tf.reduce_mean(-log_likehood, name="loss")
         optimizer = tf.train.AdamOptimizer(0.003)
         tvars = tf.trainable_variables()
         grads, _ = tf.clip_by_global_norm(tf.gradients(self.loss, tvars), 10)
@@ -165,32 +168,26 @@ class RNN_CNNs():
         now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         save_path=saver.save(sess,"tmp/model-%s.ckpt" %now)
 
-    def partial_fit(self, sentence, word_list, word_addition, char_addition, sent_len, labels ):
+    def partial_fit(self, sentence, word_list, sent_len, labels ):
         feed_dict = {self.sentence : sentence,
                      self.word_list : word_list,
-                     self.word_addition: word_addition,
-                     self.char_addition : char_addition,
                      self.sent_len: sent_len,
                      self.labels: labels
         }
         cost, opt = self.sess.run((self.loss, self.train_op), feed_dict= feed_dict)
         return cost
 
-    def calc_total_cost(self, sentence, word_list, word_addition, char_addition, sent_len, labels ):
+    def calc_total_cost(self, sentence, word_list,sent_len, labels ):
         feed_dict = {self.sentence : sentence,
                      self.word_list : word_list,
-                     self.word_addition: word_addition,
-                     self.char_addition : char_addition,
                      self.sent_len: sent_len,
                      self.labels: labels
         } 
         return self.sess.run(self.loss, feed_dict = feed_dict)
 
-    def transform(self, sentence, word_list, word_addition, char_addition, sent_len):
+    def transform(self, sentence, word_list,  sent_len):
         feed_dict = {self.sentence : sentence,
                      self.word_list : word_list,
-                     self.word_addition: word_addition,
-                     self.char_addition : char_addition,
                      self.sent_len: sent_len
         }
         return self.sess.run(self.label_predict, feed_dict=feed_dict)

@@ -48,3 +48,40 @@ def padSequence(dataset,max_length,beginZero=True):
         else:
             dataset_p.append(x[0:max_length])
     return np.array(dataset_p),actual_sequence_length
+
+def load_word_embedding_dict(embedding,embedding_path,logger):
+    """
+    load word embeddings from file
+    :param embedding:
+    :param embedding_path:
+    :param logger:
+    :return: embedding dict, embedding dimention, caseless
+    """
+    if embedding == 'word2vec':
+        # loading word2vec
+        logger.info("Loading word2vec ...")
+        word2vec = Word2Vec.load_word2vec_format(embedding_path, binary=True)
+        embedd_dim = word2vec.vector_size
+        return word2vec, embedd_dim, False
+    elif embedding == 'glove':
+        # loading GloVe
+        logger.info("Loading GloVe ...")
+        embedd_dim = -1
+        embedd_dict = dict()
+        with open(embedding_path, 'r') as file:
+            for line in file:
+                line = line.strip()
+                if len(line) == 0:
+                    continue
+
+                tokens = line.split()
+                if embedd_dim < 0:
+                    embedd_dim = len(tokens) - 1 #BECAUSE THE ZEROTH INDEX IS OCCUPIED BY THE WORD
+                else:
+                    assert (embedd_dim + 1 == len(tokens))
+                embedd = np.empty([1, embedd_dim], dtype=np.float64)
+                embedd[:] = tokens[1:]
+                embedd_dict[tokens[0]] = embedd
+        return embedd_dict, embedd_dim, True
+    else:
+        raise ValueError("embedding should choose from [word2vec, glove]")
