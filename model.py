@@ -126,7 +126,7 @@ class RNN_CNNs():
         self.prediction = tf.reshape(predict, 
                                      [-1, self.config["sentence_length"], self.config["num_class"]])
         #self.loss = self._cost()
-        log_likehood, _ = tf.contrib.crf.crf_log_likelihood(
+        log_likehood, self.transition_params = tf.contrib.crf.crf_log_likelihood(
                 self.prediction, self.labels, self.sent_len)
         self.loss = tf.reduce_mean(-log_likehood, name="loss")
         optimizer = tf.train.AdamOptimizer(0.003)
@@ -185,9 +185,13 @@ class RNN_CNNs():
         } 
         return self.sess.run(self.loss, feed_dict = feed_dict)
 
-    def transform(self, sentence, word_list,  sent_len):
+    def transform(self, sentence, word_list, sent_len):
         feed_dict = {self.sentence : sentence,
                      self.word_list : word_list,
                      self.sent_len: sent_len
         }
-        return self.sess.run(self.label_predict, feed_dict=feed_dict)
+        logits, transition_params = self.sess.run([self.prediction, self.transition_params], 
+                                                  feed_dict=feed_dict)
+        viterbi_sequence, viterbi_score = tf.contrib.crf.viterbi_decode(
+            logits, transition_params)
+        return viterbi_sequence

@@ -118,6 +118,11 @@ if __name__ == "__main__":
     ner = RNN_CNNs(config, embedd_table, char_embedd_table)
     logger.info("Model Created")
     f1_s = open("f1.txt", "w")
+    dev_prediction = ner.transform(word_index_sentences_dev_pad, char_index_dev_pad, dev_seq_length)
+    f1 = _f1(config, dev_prediction, label_index_sentences_dev_pad, dev_sent_len, "micro")
+    print("\nEvaluate:\n")
+    print("f1 score after {} epoch:{}\n".format(e, f1))
+    f1_s.write(str(f1) + "\n")
     for e in range(FLAGS.epochs):
         for step, (token_ids_batch, sent_len_batch,\
                char_ids_batch, target_batch) in enumerate(
